@@ -1,0 +1,89 @@
+-- ================================================================
+-- KeepWell (flat) -> BET_Files_Dhan (RECORDDATA) : DELTA APPEND
+--   - Loads only new/updated rows since last load
+--   - Converts flat columns to RECORDDATA (Column_Name, Column_Value, Data_Type)
+--   - Safe to re-run: idempotent
+-- ================================================================
+
+DECLARE src_fq STRING DEFAULT 'dev-edap.BET_STAGE.BET_KeepWell';
+DECLARE dst_fq STRING DEFAULT 'dev-edap.BET_DIST.BET_Files_Dhan';
+
+-- === Watermark: latest record already loaded ===
+DECLARE wm TIMESTAMP DEFAULT IFNULL(
+  (SELECT MAX(COALESCE(Upd_Rec_Sys_Tms, Crt_Rec_Sys_Tms))
+   FROM `dev-edap.BET_DIST.BET_Files_Dhan`),
+  TIMESTAMP '1970-01-01 00:00:00'
+);
+
+-- === Parse identifiers for INFORMATION_SCHEMA ===
+DECLARE src_project STRING DEFAULT SPLIT(src_fq, '.')[OFFSET(0)];
+DECLARE src_dataset STRING DEFAULT SPLIT(src_fq, '.')[OFFSET(1)];
+DECLARE src_table   STRING DEFAULT SPLIT(src_fq, '.')[OFFSET(2)];
+
+-- === Build dynamic ARRAY_CONCAT(...) for all columns ===
+DECLARE array_expr STRING;
+
+SET array_expr = (
+  SELECT 'ARRAY_CONCAT(' ||
+         STRING_AGG(
+           FORMAT(
+             "ARRAY(SELECT AS STRUCT '%s' AS Column_Name,
+                                  CAST(%s AS STRING) AS Column_Value,
+                                  '%s' AS Data_Type
+                    WHERE %s IS NOT NULL%s)",
+             column_name,
+             FORMAT('`%s`', column_name),
+             UPPER(data_type),
+             FORMAT('`%s`', column_name),
+             IF(UPPER(data_type)='STRING',
+                CONCAT(' AND CAST(`', column_name, '` AS STRING) <> '''''''), '')
+           )
+           ORDER BY ordinal_position
+         )
+         || ')'
+  FROM `dev-edap`.region-us.INFORMATION_SCHEMA.COLUMNS
+  WHERE table_catalog = src_project
+    AND table_schema  = src_dataset
+    AND table_name    = src_table
+);
+
+-- === Perform delta insert ===
+EXECUTE IMMEDIATE '''
+INSERT INTO '''||dst_fq||''' (
+  RECORDDATA,                -- ARRAY<STRUCT<Column_Name STRING, Column_Value STRING, Data_Type STRING>>
+  Sys_Of_Rec_Cd,
+  Src_Sys_Cd,
+  Audit_Row_Id,
+  Prcs_Id,
+  Crt_Rec_Sys_Tms,
+  Upd_Rec_Sys_Tms,
+  Bus_Dt
+)
+WITH src AS (
+  SELECT *
+  FROM '''||src_fq||'''
+  WHERE COALESCE(Upd_Rec_Sys_Tms, Crt_Rec_Sys_Tms) > @wm
+),
+pairs AS (
+  SELECT
+    '''||array_expr||''' AS RECORDDATA,
+    Sys_Of_Rec_Cd,
+    Src_Sys_Cd,
+    Audit_Row_Id,
+    Prcs_Id,
+    Crt_Rec_Sys_Tms,
+    Upd_Rec_Sys_Tms,
+    Bus_Dt
+  FROM src
+)
+SELECT
+  RECORDDATA,
+  Sys_Of_Rec_Cd,
+  Src_Sys_Cd,
+  Audit_Row_Id,
+  Prcs_Id,
+  Crt_Rec_Sys_Tms,
+  Upd_Rec_Sys_Tms,
+  Bus_Dt
+FROM pairs
+''' USING wm;
