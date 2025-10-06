@@ -1,0 +1,21 @@
+SET array_expr = (
+  SELECT 'ARRAY_CONCAT([' ||
+    STRING_AGG(
+      FORMAT(
+        "ARRAY(SELECT AS STRUCT '%s' AS Column_Name,
+          CAST(%s AS STRING) AS Column_Value,
+          '%s' AS Data_Type
+        WHERE %s IS NOT NULL)",
+        column_name,
+        column_name,
+        data_type,
+        column_name
+      ),
+      ', '
+    )
+  || '])'
+  FROM dev-edap.region-us.INFORMATION_SCHEMA.COLUMNS
+  WHERE table_catalog = src_project
+    AND table_schema = src_dataset
+    AND table_name = src_table
+);
