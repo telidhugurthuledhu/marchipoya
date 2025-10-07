@@ -1,0 +1,25 @@
+Summary of Work Completed
+
+Created and configured the BET_Files table (existing structure leveraged).
+
+Developed a merge logic to bring in any new or changed records from BET_KeepWell.
+
+Implemented SCD Type-2 behavior:
+
+For every incoming record, compared all business columns (concatenated as a composite key) to detect changes.
+
+If a change is detected, sunset the old record (set Current_Record = 0) and insert the new record (set Current_Record = 1).
+
+Added a new column Current_Record to indicate record status:
+
+1 → most recent / active record.
+
+0 → historical / superseded record.
+
+Designed logic so that it can be reused for other BET files (the same merge pattern can be applied across all 8–9 files).
+
+For this particular file, since a file layout table does not exist, fetched column metadata directly from the raw table using INFORMATION_SCHEMA.
+
+Dynamically constructed and inserted column key-value pairs into the RECORDDATA array structure (for traceability and audit).
+
+Overall, established a reusable, automated process to maintain SCD2 history and data lineage between BET_KeepWell → BET_Files.
