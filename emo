@@ -1,9 +1,0 @@
--- 🔁 Map Field (Field1, Field2, ...) to actual column names
-CREATE OR REPLACE TEMP TABLE Field_Map AS
-SELECT
-  l.Field,
-  c.column_name
-FROM `dev-edap.BET_STAGE.BET_KeepWell_FileLayout_New` l
-JOIN `dev-edap.BET_RAW.INFORMATION_SCHEMA.COLUMNS` c
-  ON c.table_name = 'BET_KeepWell'
-  AND c.ordinal_position = SAFE_CAST(REGEXP_REPLACE(l.Field, r'[^0-9]', '') AS INT64);
